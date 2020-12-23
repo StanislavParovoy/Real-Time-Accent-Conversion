@@ -8,7 +8,7 @@ sys.path.append("..")
 import tensorflow as tf
 
 from VoiceCloning.vq import Encoder
-from VoiceCloning.melgan import TFMelGANGeneratorGC
+from Melgan.melgan import TFMelGANGeneratorGC
 from tensorflow_tts.models import TFPQMF
 from tensorflow_tts.configs import MultiBandMelGANGeneratorConfig
 

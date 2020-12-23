@@ -47,9 +47,9 @@ from tensorflow_tts.models import (
 )
 from tensorflow_tts.utils import calculate_2d_loss, calculate_3d_loss, return_strategy
 
-from InverseAcousticModel.dataset import DatasetGC
+from Melgan.dataset import DatasetGC
+from Melgan.melgan import TFMelGANGeneratorGC
 from VoiceCloning.vq import Encoder, VQLoss
-from VoiceCloning.melgan import TFMelGANGeneratorGC
 
 
 class TrainerHistogram(MelganTrainer):
@@ -500,6 +500,7 @@ def main():
             encoder=encoder,
             name="multi_band_melgan_generator",
         )
+        generator.set_shape(config['n_mels'], config['gc_channels'])
 
         discriminator = TFMelGANMultiScaleDiscriminator(
             MultiBandMelGANDiscriminatorConfig(
