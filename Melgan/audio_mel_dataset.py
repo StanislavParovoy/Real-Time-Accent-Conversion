@@ -60,9 +60,8 @@ class AudioMelDataset(AbstractDataset):
             mel_files
         ), f"Number of audio and mel files are different ({len(audio_files)} vs {len(mel_files)})."
 
-        if ".npy" in audio_query:
-            suffix = audio_query[1:]
-            utt_ids = [os.path.basename(f).replace(suffix, "") for f in audio_files]
+        suffix = audio_query[1:]
+        utt_ids = [os.path.basename(f).replace(suffix, "") for f in audio_files]
 
         # set global params
         self.utt_ids = utt_ids
