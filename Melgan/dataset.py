@@ -1,0 +1,186 @@
+
+import logging
+import os
+
+import numpy as np
+import tensorflow as tf
+
+import sys
+
+# sys.path.append(".")
+sys.path.append("..")
+from Melgan.audio_mel_dataset import AudioMelDataset
+from tensorflow_asr.featurizers.speech_featurizers import read_raw_audio, TFSpeechFeaturizer
+
+class Dataset(AudioMelDataset):
+    """some changes to the original one."""
+
+    def __init__(self, 
+                 n_mels=768, 
+                 training=True, 
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.n_mels = n_mels
+        self.training = training
+        self.audio_query = kwargs.get('audio_query').replace('*', '')
+        self.mel_query = kwargs.get('mel_query').replace('*', '')
+        if training:
+            self.utt_ids = self.utt_ids[100: ]
+        else:
+            self.utt_ids = self.utt_ids[: 100]
+
+        self.padded_shapes = {
+            "utt_ids": [],
+            "audios": [None],
+            "mels": [None, n_mels],
+            "mel_lengths": [],
+            "audio_lengths": [],
+        }
+
+        # define padded values
+        self.padding_values = {
+            "utt_ids": "",
+            "audios": 0.0,
+            "mels": 0.0,
+            "mel_lengths": 0,
+            "audio_lengths": 0,
+        }
+
+    def generator_rand(self, utt_ids):
+        indices = np.arange(len(utt_ids))
+        np.random.shuffle(indices)
+        for i in indices:
+            utt_id = utt_ids[i]
+            audio_file = self.audio_files[i]
+            # mel_file = self.mel_files[i]
+            mel_file = audio_file.replace(self.audio_query, self.mel_query)
+
+            items = {
+                "utt_ids": utt_id,
+                "audio_files": audio_file,
+                "mel_files": mel_file,
+            }
+
+            yield items
+
+    def create(
+        self,
+        allow_cache=False,
+        batch_size=1,
+        is_shuffle=False,
+        map_fn=None,
+        reshuffle_each_iteration=True,
+    ):
+        """Create tf.dataset function."""
+        output_types = self.get_output_dtypes()
+        datasets = tf.data.Dataset.from_generator(
+            self.generator_rand if self.training else self.generator, output_types=output_types, args=(self.get_args())
+        )
+
+        # load dataset
+        datasets = datasets.map(
+            lambda items: self._load_data(items), tf.data.experimental.AUTOTUNE
+        )
+
+        datasets = datasets.filter(
+            lambda x: x["mel_lengths"] > self.mel_length_threshold
+        )
+        datasets = datasets.filter(
+            lambda x: x["audio_lengths"] > self.audio_length_threshold
+        )
+
+        if batch_size > 1 and map_fn is None:
+            raise ValueError("map function must define when batch_size > 1.")
+
+        if map_fn is not None:
+            datasets = datasets.map(map_fn, tf.data.experimental.AUTOTUNE)
+
+        datasets = datasets.padded_batch(
+            batch_size,
+            padded_shapes=self.padded_shapes,
+            padding_values=self.padding_values,
+            drop_remainder=True,
+        )
+        datasets = datasets.prefetch(tf.data.experimental.AUTOTUNE)
+        return datasets
+
+
+class DatasetF0(Dataset):
+    """dataset with log f0."""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.f0_query = '_f0.npy'
+
+    @tf.function
+    def _load_data(self, items):
+        audio = tf.numpy_function(np.load, [items["audio_files"]], tf.float32)
+        mel = tf.numpy_function(np.load, [items["mel_files"]], tf.float32)
+        f0_name = tf.strings.regex_replace(items['mel_files'], self.mel_query, self.f0_query)
+        f0 = tf.numpy_function(np.load, [f0_name], tf.float32)
+        mel = tf.repeat(mel, 2, axis=0)
+        mel = tf.concat([mel, f0], axis=-1)
+
+        items = {
+            "utt_ids": items["utt_ids"],
+            "audios": audio,
+            "mels": mel,
+            "mel_lengths": len(mel),
+            "audio_lengths": len(audio),
+        }
+
+        return items
+
+
+class DatasetGC(Dataset):
+    """dataset with global condition (e.g. speaker embedding)."""
+
+    def __init__(self, 
+                 gc_channels=256, 
+                 **kwargs):
+        super().__init__(**kwargs)
+        self.gc_query = '_gc.npy'
+
+        self.padded_shapes.update({'gc': [gc_channels]})
+        self.padding_values.update({'gc': 0.})
+
+        self.feature = TFSpeechFeaturizer(
+            speech_config = {
+                "sample_rate": 16000,
+                "frame_ms": 25,
+                "stride_ms": 10,
+                "num_feature_bins": self.n_mels,
+                "feature_type": 'log_mel_spectrogram',
+                "delta": False,
+                "delta_delta": False,
+                "pitch": False,
+                "normalize_signal": True,
+                "normalize_feature": True,
+                "normalize_per_feature": False
+            })
+
+    def get_audio_mel(self, path):
+        with tf.device("/CPU:0"):
+            audio = read_raw_audio(str(path).decode('UTF-8'))
+            mel = self.feature.extract(audio)
+            return audio, mel
+
+    @tf.function
+    def _load_data(self, items):
+        audio, mel = tf.numpy_function(self.get_audio_mel, [items["audio_files"]], [tf.float32, tf.float32])
+        # audio = tf.numpy_function(np.load, [items["audio_files"]], tf.float32)
+        # mel = tf.numpy_function(np.load, [items["mel_files"]], tf.float32)
+        gc_name = tf.strings.regex_replace(items['mel_files'], self.mel_query, self.gc_query)
+        gc = tf.numpy_function(np.load, [gc_name], tf.float32)
+
+        items = {
+            "utt_ids": items["utt_ids"],
+            "audios": audio,
+            "mels": mel,
+            "gc": gc,
+            "mel_lengths": len(mel),
+            "audio_lengths": len(audio),
+        }
+
+        return items
+
