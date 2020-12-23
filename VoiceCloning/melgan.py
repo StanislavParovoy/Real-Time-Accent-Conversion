@@ -125,24 +125,26 @@ class TFMelGANGeneratorGC(tf.keras.Model):
         self.upsample = layers
         # self.melgan = tf.keras.models.Sequential(layers)
 
-    def call(self, data, **kwargs):
+    def call(self, data, training=True):
         """Calculate forward propagation.
         Args:
             c (Tensor): Input tensor (B, T, channels)
         Returns:
             Tensor: Output tensor (B, T ** prod(upsample_scales), out_channels)
         """
-        mels, gc = data['mels'], data['gc']
-        return self.inference(mels, gc, training=kwargs.get('training', False))
+        return self.inference(data, training)
 
     @tf.function(
         input_signature=[
-            tf.TensorSpec(shape=[None, None, n_mels], dtype=tf.float32, name="mels"),
-            tf.TensorSpec(shape=[None, gc_channels], dtype=tf.float32, name="gc"),
+        {
+            'mels': tf.TensorSpec(shape=[None, None, n_mels], dtype=tf.float32, name="mels"),
+            'gc': tf.TensorSpec(shape=[None, gc_channels], dtype=tf.float32, name="gc"),
+        },
             tf.TensorSpec(shape=[], dtype=tf.bool, name="training")
         ]
     )
-    def inference(self, mels, gc, training):
+    def inference(self, data, training):
+        mels, gc = data['mels'], data['gc']
         gc = tf.expand_dims(gc, axis=1)
         i = 0
         output = self.encoder(mels, training=training)
@@ -154,15 +156,17 @@ class TFMelGANGeneratorGC(tf.keras.Model):
                 i += 1
         output.update({'y_mb_hat': y})
         return output
-        # return self.melgan(mels)
 
     @tf.function(
         input_signature=[
-            tf.TensorSpec(shape=[1, None, n_mels], dtype=tf.float32, name="mels"),
-            tf.TensorSpec(shape=[1, gc_channels], dtype=tf.float32, name="gc")
+        {
+            'mels': tf.TensorSpec(shape=[None, None, n_mels], dtype=tf.float32, name="mels"),
+            'gc': tf.TensorSpec(shape=[None, gc_channels], dtype=tf.float32, name="gc"),
+        }
         ]
     )
-    def inference_tflite(self, mels, gc):
+    def inference_tflite(self, data):
+        mels, gc = data['mels'], data['gc']
         gc = tf.expand_dims(gc, axis=1)
         i = 0
         output = self.encoder(mels, training=False)

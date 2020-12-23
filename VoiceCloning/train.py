@@ -519,7 +519,7 @@ def main():
         # dummy input to build model.
         fake_mels = tf.random.uniform(shape=[1, 100, config['n_mels']], dtype=tf.float32)
         fake_gc = tf.random.uniform(shape=[1, config['gc_channels']], dtype=tf.float32)
-        y_mb_hat = generator(fake_mels, fake_gc, training=True)
+        y_mb_hat = generator({'mels':fake_mels, 'gc': fake_gc}, training=True)
         print('autio', [1, 100*config['hop_size'], 1])
         for k in y_mb_hat:
             print(k, y_mb_hat[k].shape)

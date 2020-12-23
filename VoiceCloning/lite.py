@@ -59,7 +59,7 @@ class Model(tf.keras.Model):
       }]
   )
   def call(self, data):
-    x = self.generator.inference_tflite(data['mels'], data['gc'])
+    x = self.generator.inference_tflite(data)
     x = self.pqmf.synthesis(x)
     return x
 
