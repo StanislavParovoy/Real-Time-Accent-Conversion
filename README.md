@@ -61,7 +61,7 @@ See OpenSeq2Seq and TensorFlowASR.
 #### 1.2
 Fine-tune the model on accented data. This is based on the Multireader approach from section 2.3 of GE2E paper.
 
-### Step 2 (Vocoder)
+### Step 2 (IAM)
 
 #### 2.1 
 Extract accent-invariant features for your IAM dataset, using the ASR model from 1.1.
@@ -80,7 +80,7 @@ To use pretrained Conformer, run:
 
 This will create a "_raw.npy" file and "_conformer_enc16.npy" for each ".wav" file in dataset folder.
 
-#### 2.2 
+#### 2.2
 Train a vocoder conditioned on the extracted features.
 
 I used the multiband-melgan from TensorSpeech/TensorFlowTTS. Run:
@@ -117,13 +117,13 @@ I used VQ-VAE with multiband-melgan from TensorFlowTTS, modified to include spea
 
 TODO
 
-### TODOs
+### Improvements
 
-Need more features from original audio when training IAM, so it loses less of the original cadence. (experimenting with f0)
+[TODO] Integrate [SPICE](https://tfhub.dev/google/spice/2) with IAM training (2.2) so it loses less of the original cadence.
 
-Train a LM on asr features to improve its accuracy (dealing with mispronouciation).
+[TODO] Train a LM on asr features to improve its accuracy (dealing with mispronouciation).
 
-Speaker embedding calculation should run in parallel to IAM.
+[TODO] Speaker embedding and its weight / bias calculation should run in parallel to IAM.
 
 ### Notes
 
