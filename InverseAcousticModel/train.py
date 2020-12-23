@@ -33,8 +33,8 @@ import yaml
 from tensorflow.keras.mixed_precision import experimental as mixed_precision
 
 import tensorflow_tts
-from InverseAcousticModel.dataset import Dataset
-from InverseAcousticModel.melgan import TFMelGANGenerator
+from Melgan.dataset import Dataset
+from Melgan.melgan import TFMelGANGenerator
 from Melgan.train_melgan import collater
 from Melgan.train_multiband_melgan import MultiBandMelganTrainer
 from tensorflow_tts.configs import (
@@ -250,6 +250,7 @@ def main():
             ),
             name="multi_band_melgan_generator",
         )
+        generator.set_shape(config['n_mels'])
 
         discriminator = TFMelGANMultiScaleDiscriminator(
             MultiBandMelGANDiscriminatorConfig(
