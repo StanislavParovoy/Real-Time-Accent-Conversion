@@ -16,7 +16,7 @@ class Dataset(AudioMelDataset):
     """some changes to the original one."""
 
     def __init__(self, 
-                 n_mels=768, 
+                 n_mels, 
                  training=True, 
                  **kwargs):
         super().__init__(**kwargs)
@@ -65,11 +65,9 @@ class Dataset(AudioMelDataset):
 
     def create(
         self,
-        allow_cache=False,
         batch_size=1,
-        is_shuffle=False,
         map_fn=None,
-        reshuffle_each_iteration=True,
+        **unused_kwargs
     ):
         """Create tf.dataset function."""
         output_types = self.get_output_dtypes()
@@ -144,32 +142,10 @@ class DatasetGC(Dataset):
         self.padded_shapes.update({'gc': [gc_channels]})
         self.padding_values.update({'gc': 0.})
 
-        self.feature = TFSpeechFeaturizer(
-            speech_config = {
-                "sample_rate": 16000,
-                "frame_ms": 25,
-                "stride_ms": 10,
-                "num_feature_bins": self.n_mels,
-                "feature_type": 'log_mel_spectrogram',
-                "delta": False,
-                "delta_delta": False,
-                "pitch": False,
-                "normalize_signal": True,
-                "normalize_feature": True,
-                "normalize_per_feature": False
-            })
-
-    def get_audio_mel(self, path):
-        with tf.device("/CPU:0"):
-            audio = read_raw_audio(str(path).decode('UTF-8'))
-            mel = self.feature.extract(audio)
-            return audio, mel
-
     @tf.function
     def _load_data(self, items):
-        audio, mel = tf.numpy_function(self.get_audio_mel, [items["audio_files"]], [tf.float32, tf.float32])
-        # audio = tf.numpy_function(np.load, [items["audio_files"]], tf.float32)
-        # mel = tf.numpy_function(np.load, [items["mel_files"]], tf.float32)
+        audio = tf.numpy_function(np.load, [items["audio_files"]], tf.float32)
+        mel = tf.numpy_function(np.load, [items["mel_files"]], tf.float32)
         gc_name = tf.strings.regex_replace(items['mel_files'], self.mel_query, self.gc_query)
         gc = tf.numpy_function(np.load, [gc_name], tf.float32)
 
