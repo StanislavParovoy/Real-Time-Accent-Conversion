@@ -285,12 +285,14 @@ class TFMelGANGeneratorGC(tf.keras.Model):
         for layer in self.upsample:
             y = layer(y)
             if isinstance(layer, tf.keras.Sequential):
-                y += self.gc_linear[i](gc)
+                y += tf.nn.softsign(self.gc_linear[i](gc))
                 i += 1
         output.update({'y_mb_hat': y})
         return output
 
     def inference_tflite(self, data):
+        return self.inference(data, training=False)['y_mb_hat']
+        '''
         mels, gc = data['mels'], data['gc']
         gc = tf.expand_dims(gc, axis=1)
         i = 0
@@ -302,6 +304,7 @@ class TFMelGANGeneratorGC(tf.keras.Model):
                 y += self.gc_linear[i](gc)
                 i += 1
         return y
+        '''
 
     def _apply_weightnorm(self, list_layers):
         """Try apply weightnorm for all layer in list_layers."""
