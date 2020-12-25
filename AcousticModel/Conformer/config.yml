@@ -43,7 +43,7 @@ model_config:
   prediction_embed_dropout: 0
   prediction_num_rnns: 1
   prediction_rnn_units: 320
-  prediction_rnn_type: lstm
+  prediction_rnn_type: gru
   prediction_rnn_implementation: 1
   prediction_layer_norm: True
   prediction_projection_units: 0

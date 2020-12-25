@@ -25,10 +25,10 @@ DEFAULT_YAML = os.path.join(os.path.abspath(os.path.dirname(__file__)), "config.
 tf.keras.backend.clear_session()
 
 from tensorflow_asr.configs.config import Config
-from AcousticModel.Conformer.dataset import *
+from dataset import *
 from tensorflow_asr.featurizers.speech_featurizers import TFSpeechFeaturizer
 from tensorflow_asr.featurizers.text_featurizers import SubwordFeaturizer
-from tensorflow_asr.runners.transducer_runners import TransducerTrainer
+from tensorflow_asr.runners.transducer_runners import TransducerTrainer, TransducerTrainerGA
 from tensorflow_asr.models.conformer import Conformer
 from tensorflow_asr.optimizers.schedules import TransformerSchedule
 
@@ -46,6 +46,9 @@ def main():
 
     parser.add_argument("--ebs", type=int, default=None,
                         help="Evaluation batch size per replica")
+
+    parser.add_argument("--acs", type=int, default=None,
+                        help="Train accumulation steps")
 
     parser.add_argument("--devices", type=int, nargs="*", default=[0],
                         help="Devices' ids to apply distributed training")
@@ -98,7 +101,7 @@ def main():
         stage="eval", cache=False, shuffle=False
     )
 
-    conformer_trainer = TransducerTrainer(
+    conformer_trainer = TransducerTrainerGA(
         config=config.learning_config.running_config,
         text_featurizer=text_featurizer, strategy=strategy
     )
@@ -123,7 +126,7 @@ def main():
     conformer_trainer.compile(model=conformer, optimizer=optimizer,
                             max_to_keep=args.max_ckpts)
 
-    conformer_trainer.fit(train_dataset, eval_dataset, train_bs=args.tbs, eval_bs=args.ebs)
+    conformer_trainer.fit(train_dataset, eval_dataset, train_bs=args.tbs, eval_bs=args.ebs, train_acs=args.acs)
 
 if __name__ == '__main__':
     main()

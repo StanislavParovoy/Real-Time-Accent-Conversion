@@ -2,27 +2,32 @@ import tensorflow as tf
 import numpy as np
 from pathlib import Path
 from tensorflow_asr.datasets.asr_dataset import ASRDataset, ASRSliceDataset
-
+from tensorflow_asr.featurizers.speech_featurizers import read_raw_audio
 
 class DatasetBase(ASRDataset):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.audio_query = '_wav.npy'
+        self.audio_query = '.wav'
         self.mel_query = '_mel.npy'
 
     def preprocess(self, audio, transcript):
-        audio = audio.decode("utf-8")
-        features = np.load(audio.replace(self.audio_query, self.mel_query))
-        features = self.augmentations.after.augment(features)
+        with tf.device('/CPU:0'):
+            audio = audio.decode("utf-8")
+            # features = np.load(audio.replace(self.audio_query, self.mel_query))
+            signal = read_raw_audio(audio, self.speech_featurizer.sample_rate)
+            signal = self.augmentations.before.augment(signal)
+            features = self.speech_featurizer.extract(signal)
 
-        label = self.text_featurizer.extract(transcript.decode("utf-8"))
-        label_length = tf.cast(tf.shape(label)[0], tf.int32)
-        prediction = self.text_featurizer.prepand_blank(label)
-        prediction_length = tf.cast(tf.shape(prediction)[0], tf.int32)
-        features = tf.convert_to_tensor(features, tf.float32)
-        input_length = tf.cast(tf.shape(features)[0], tf.int32)
+            features = self.augmentations.after.augment(features)
 
-        return features, input_length, label, label_length, prediction, prediction_length
+            label = self.text_featurizer.extract(transcript.decode("utf-8"))
+            label_length = tf.cast(tf.shape(label)[0], tf.int32)
+            prediction = self.text_featurizer.prepand_blank(label)
+            prediction_length = tf.cast(tf.shape(prediction)[0], tf.int32)
+            features = tf.convert_to_tensor(features, tf.float32)
+            input_length = tf.cast(tf.shape(features)[0], tf.int32)
+
+            return features, input_length, label, label_length, prediction, prediction_length
 
     @tf.function
     def parse(self, record):
@@ -37,9 +42,9 @@ class DatasetBase(ASRDataset):
         if len(entries) == 0: return None
         # entries = np.delete(entries, 1, 1)  # Remove unused duration
         def generator(entries):
-            entries = np.random.shuffle(entries)
+            np.random.shuffle(entries)
             for line in entries:
-                yield entries
+                yield line
         dataset = tf.data.Dataset.from_generator(generator,
             output_types=tf.string, args=[entries]
         )
@@ -56,28 +61,8 @@ class DatasetLibri(DatasetBase):
             for filename in all_files:
                 with open(filename) as f:
                     text = f.readline()
-                audio_name = filename.replace(txt, '_wav.npy')
-                lines += [(audio_name, text)]
-        # lines = [line.split("\t", 2) for line in lines]
-        lines = np.array(lines)
-        np.random.shuffle(lines)  # Mix transcripts.tsv
-        self.total_steps = len(lines)
-        return lines
-
-
-class DatasetLibri(DatasetBase):
-    def read_entries(self):
-        lines = []
-        txt = '.normalized.txt'
-        for file_path in self.data_paths:
-            print(f"Reading {file_path} ...")
-            all_files = map(str, Path(file_path).glob('*/*/*'+txt))
-            for filename in all_files:
-                with open(filename) as f:
-                    text = f.readline()
-                audio_name = filename.replace(txt, '_wav.npy')
-                lines += [(audio_name, text)]
-        # lines = [line.split("\t", 2) for line in lines]
+                audio_name = filename.replace(txt, self.audio_query)
+                lines.append((audio_name, text))
         lines = np.array(lines)
         np.random.shuffle(lines)  # Mix transcripts.tsv
         self.total_steps = len(lines)
