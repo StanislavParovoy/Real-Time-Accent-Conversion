@@ -13,7 +13,7 @@
 # limitations under the License.
 # import sys
 # sys.path.append('.')
-import os
+import os, yaml
 import argparse
 from tensorflow_asr.utils import setup_environment, setup_devices
 from tensorflow_tts.utils import find_files
@@ -51,7 +51,9 @@ from tensorflow_asr.featurizers.text_featurizers import CharFeaturizer, SubwordF
 from tensorflow_asr.models.conformer import Conformer
 
 config = Config(args.config, learning=False)
-speech_featurizer = TFSpeechFeaturizer(config.speech_config)
+with open(config.speech_config) as f:
+    speech_config = yaml.load(f, Loader=yaml.Loader)
+speech_featurizer = TFSpeechFeaturizer(speech_config)
 # build model
 conformer = Conformer(**config.model_config, vocabulary_size=1031)
 conformer._build(speech_featurizer.shape)
