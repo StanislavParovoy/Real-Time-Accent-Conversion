@@ -1,0 +1,24 @@
+
+speech_config: "preprocess/preprocess.yml"
+
+model:
+  num_cnn: 3
+  cnn_filters: 128
+  rnn_filters: 512
+  projection_filters: 256
+  w: 10
+  b: -5
+
+data:
+  n: 64
+  m: 10
+  min_frames: 140
+  max_frames: 180
+
+training:
+  seed: 1024
+  lr: [0.01, 0.05, 0.025, 0.0125, 0.00625, 0.003125]
+  boundaries: [100000, 200000, 300000, 400000, 500000]
+  steps: 500000
+  save_interval: 100000
+  log_interval: 500
