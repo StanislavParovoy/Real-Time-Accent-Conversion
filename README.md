@@ -1,37 +1,33 @@
 # Real Time Foreign Accent Conversion
 
-## Converts English utterances to North American accent in 3 seconds, no need of parallel data
+## Converts English utterances to another accent in 5 seconds, no need of parallel data
 
-## **Samples**
+## Important
 
+This pipeline didn't yield high robustness I was expecting (heavy accents poorly recognised & converted); I am no longer working on this topic.
 
-## **Requirements**
+## **Dependency**
 
-Install [TensorFlowASR](https://github.com/TensorSpeech/TensorFlowASR) and [TensorFlowTTS](https://github.com/TensorSpeech/TensorFlowTTS) following their instructions.
-Make sure you can import `tensorflow_tts` and `tensorflow_asr` in this directory.
+[TensorFlowASR](https://github.com/TensorSpeech/TensorFlowASR) 
 
-## **Using pretrained models**
+[TensorFlowTTS](https://github.com/TensorSpeech/TensorFlowTTS)
 
-`python3 demo.py --audio` demo.wav
-
-## **How it works** 
-The key idea is that if a generative model has only seen data from a particular distribution / domain (e.g. North Amercan English), then it can only generate samples similar to those in that distribution.
-
+## **Architecture** 
 My pipeline is as follows:
 
-![model architecture](model_architecture.jpg?raw=true "arch")
+![model architecture](model_architecture.jpg?raw=true "architecture")
 
 ### Module 1: Accent-Invariant Feature from Acoustic Model (AM)
 
-You can get an acoustic model by training an asr model. The most intuitve accent-invariant feature would be text, however this will lose all cadence / prosody / tone / speaker information of the original audio. On the other hand, outputs of intermediate layers of pretrained ASR models preserve most of these features. This idea is inspired by [TTS Skins: Speaker Conversion via ASR](https://arxiv.org/abs/1904.08983), but deeper layers are needed to drop the accent.
+This is the part where speech data with different accents are mapped to the same latent space. You can get an AM by training an ASR model. Instead of using a full ASR followed by some TTS model, I used outputs of intermediate layers of pretrained ASR models. This idea is inspired by [TTS Skins: Speaker Conversion via ASR](https://arxiv.org/abs/1904.08983), but deeper layers are needed to drop the accent.
 
 ### Module 2: Domain-Specific Inverse Acoustic Model (IAM)
 
-We need a vocoder that can only generate speech with a particular accent. This is achieved by training (overfitting) a vocoder on dataset containing only one accent, conditioned on the accent-invariant features extracted by the ASR model from earlier.
+Here we map from latent space back to target accent domain. The key idea is that if a generative model has only seen data from a particular distribution / domain (e.g. North Amercan English), then it can only generate samples similar to those in that distribution. This is achieved by training a vocoder on a single-speaker dataset with one target accent, conditioned on the accent-invariant features extracted by the ASR model from module 1. This idea is inspired by [A Universal Music Translation Network](https://arxiv.org/abs/1805.07848).
 
 ### Module 3: Voice Cloning (VC) *
 
-By overfitting on a single-accent dataset, the vocoder generates speech with target accent AND speaker identity from that dataset. The original speaker information is restored with a voice cloning model.
+By training on a single-accent dataset, the vocoder generates speech with target accent AND speaker identity from that dataset. A voice cloning model is expected to restore the original speaker information.
 
 ## Train your own model
 
@@ -39,144 +35,159 @@ By overfitting on a single-accent dataset, the vocoder generates speech with tar
 
 #### 0.0
 Download data based on your use case.
-For instance, for converting English with random accent into North American accent:
-For AM: LibriTTS + AccentDB + VCTK (a lot of accents)
-For IAM: LJSpeech (target North American accent)
-For VC: LibriTTS (a lot of speakers)
+For instance, to convert to North American English:
+
+AM: LibriTTS + VCTK
+
+IAM: LJSpeech 
+
+VC: LibriTTS + VCTK
 
 #### 0.1
-Preprocess data to get a "_wav.npy" and "_mel.npy" for every ".wav" file in your dataset folder. All models will share the same set of stft parameters in `data/config.yml`. Run:
+Preprocess data to get a "_raw.npy" and "_mel.npy" for each ".wav" file in your dataset folder. This is needed for IAM and VC datasets. All models will share the same set of stft parameters in `preprocess/preprocess.yml`. Example usage:
 ```
-python3 data/preprocess.py \
-  --config data/config.yml \
-  --dataset [PATH_TO_DATASETS]
+python3 preprocess/preprocess.py \
+  --config preprocess/preprocess.yml \
+  --suffix *.wav \
+  --dataset PATH_TO_DATASET
 ```
+
+Create train / eval csv files for asr model, some examples could be found in `python3 preprocess/create_asr_tsv.py`.
 
 ### Step 1 (AM)
 
 #### 1.1
-Train a speech recognition model. I used pretrained Jasper from NVIDIA / Conformer.
+Train a speech recognition model based on the Multireader approach from section 2.3 of GE2E paper, using a subword Conformer (TensorFlowASR implementation):
 
-See OpenSeq2Seq and TensorFlowASR.
-
-#### 1.2
-Fine-tune the model on accented data. This is based on the Multireader approach from section 2.3 of GE2E paper.
+```
+python3 acoustic_model/train_subword_conformer_multi.py \
+  --config acoustic_model/subword_conformer.yml \
+  --subwords acoustic_model/conformer.subwords \
+  --train-dir PATH_TO_CSV \
+  --reg-dir PATH_TO_CSV \
+  --dev-dir PATH_TO_CSV \
+```
 
 ### Step 2 (IAM)
 
 #### 2.1 
-Extract accent-invariant features for your IAM dataset, using the ASR model from 1.1.
+Extract accent-invariant features for your IAM dataset, using the ASR model from step 1.
 
-For Jasper, use the output of layer `conv115`(shape: [num_samples/hop_size/2, 768]). For Conformer, use the output of ConformerEncoder (shape: [num_samples/hop_size/4, 144]). You may need to experiment on which layer to use for other ASR models.
-
-To use pretrained Jasper, run:
+For Conformer, I used the output of ConformerEncoder (shape: [num_samples/hop_size/4, 144]). One may need to experiment on which layer to use for other ASR models (e.g. Jasper: `conv115`, shape [num_samples/hop_size/2, 768]).
 
 ```
-python3 AcousticModel/Jasper/process_for_iam.py \
-  --restore PATH_TO_MODEL \
+python3 acoustic_model/extract_subword_conformer.py \
+  --config acoustic_model/subword_conformer.yml \
+  --saved PATH_TO_H5_MODEL \
   --dataset PATH_TO_IAM_DATASET \
-  --suffix _jasper_conv115
 ```
 
-This will create a "_wav.npy" file and "_jasper_conv115.npy" for each ".wav" file in dataset folder.
-
-To use pretrained Conformer, run:
-
-```
-python3 AcousticModel/Conformer/process_for_iam.py \
-  --restore PATH_TO_MODEL \
-  --dataset PATH_TO_IAM_DATASET \
-  --suffix _conformer_enc16
-```
-
-This will create a "_raw.npy" file and "_conformer_enc16.npy" for each ".wav" file in dataset folder.
+This will create a "_conformer_enc16.npy" for each ".wav" file in dataset folder.
 
 #### 2.2
-Train a vocoder conditioned on the extracted features.
-
-I used the multiband-melgan from TensorSpeech/TensorFlowTTS. Run:
+Train a vocoder conditioned on the extracted features, using the multiband-melgan (TensorFlowTTS implementation):
 
 ```
-python3 InverseAcousticModel/train.py \
-  --train_dir PATH_TO_IAM_DATASET \
-  --dev_dir PATH_TO_IAM_DATASET \
-  --outdir saved_iam
-```
-
-```
-python3 InverseAcousticModel/train.py \
+python3 inverse_acoustic_model/train_iam_wav.py \
   --train_dir PATH_TO_IAM_DATASET \
   --dev_dir PATH_TO_IAM_DATASET \
   --outdir saved_iam \
+  --config inverse_acoustic_model/iam_conformer.yaml \
+  --audio-query *_raw.npy \
+  --mel-query *_conformer_enc16.npy
+
+# resume training from checkpoint
+
+python3 inverse_acoustic_model/train_iam_wav.py \
+  --train_dir PATH_TO_IAM_DATASET \
+  --dev_dir PATH_TO_IAM_DATASET \
+  --outdir saved_iam \
+  --config inverse_acoustic_model/iam_conformer.yaml \
+  --audio-query *_raw.npy \
+  --mel-query *_conformer_enc16.npy
   --resume saved_iam/checkpoints/ckpt-200000
 ```
 
 ### Step 3 (VC) *
 
 #### 3.1
-Train a speaker verification model. 
+Train a speaker verification model, then use its output as speaker embedding vector.
 
-I used GE2E with a modified model architecture. Run:
-
-```
-python3 GE2E/train.py \
-  --dataset PATH_TO_SV_DATASET \
-  --save saved_ge2e
-```
-
-Then generate a speaker embedding vector for each utterance. Run:
+I used GE2E with a modified model architecture. Currently it only supports single gpu, although speed bottleneck is likely at disk read. 
 
 ```
-python3 GE2E/infer.py \
+python3 ge2e/train_ge2e.py \
+  --dataset PATH_TO_SV_DATASETS \
+  --save saved_ge2e \
+  --config ge2e/ge2e.yml
+
+# generate a speaker embedding vector with suffic "_gc.npy" for each "_mel.npy" file in the voice cloning dataset.
+
+python3 ge2e/extract_ge2e.py \
   --dataset PATH_TO_VC_DATASET \
+  --config ge2e/ge2e.yml \
   --restore saved_ge2e
 ```
 
-For every audio file in your dataset folder with suffix ".wav", this should create a corresponding "\_gc.npy" file, which will be used as the global condition for the vc model.
-
 #### 3.2
-Train a voice cloning model.
-
-I used VQ-VAE with multiband-melgan from TensorFlowTTS, modified to include speaker embedding vector as global condition. Run:
+Train a voice cloning model, using VQ-VAE + speaker embedding vector, on top of the multiband-melgan:
 
 ```
-python3 VoiceCloning/train.py \
-  --train_dir PATH_TO_VC_DATASET \
-  --dev_dir PATH_TO_VC_DATASET \
-  --outdir saved_vc
-```
-
-```
-python3 VoiceCloning/train.py \
+python3 voice_cloning/train_vc.py \
   --train_dir PATH_TO_VC_DATASET \
   --dev_dir PATH_TO_VC_DATASET \
   --outdir saved_vc \
+  --audio-query *_raw.npy \
+  --mel-query *_mel.npy \
+  --config voice_cloning/vc.yaml 
+
+# resume training from checkpoint
+
+python3 voice_cloning/train_vc.py \
+  --train_dir PATH_TO_VC_DATASET \
+  --dev_dir PATH_TO_VC_DATASET \
+  --outdir saved_vc \
+  --audio-query *_raw.npy \
+  --mel-query *_mel.npy \
+  --config voice_cloning/vc.yaml \
   --resume saved_vc/checkpoints/ckpt-200000
 ```
 
 ### Step 4 (Assemble)
 
-TODO
+Example:
 
-### Improvements
+```
+python3 inference.py \
+  --trim_silence \
+  --source test.wav \
+  -am PATH_TO_AM_H5 \
+  -iam PATH_TO_IAM_H5 \
+  -sv PATH_TO_SV_H5 \
+  -vc PATH_TO_VC_H5
+```
 
-[TODO] Integrate [SPICE](https://tfhub.dev/google/spice/2) with IAM training (2.2) so it loses less of the original cadence.
+This will save both IAM output and final output.
 
-[TODO] Train a LM on asr features to improve its accuracy (dealing with mispronouciation).
+### Possible Improvements
 
-[TODO] Speaker embedding and its weight / bias calculation should run in parallel to IAM.
+[] Integrate [SPICE](https://tfhub.dev/google/spice/2) with IAM training (2.2) so it loses less of the original cadence.
+
+[] Train a LM on asr features to improve its accuracy (dealing with mispronouciation).
+
+[] During inference, speaker embedding calculation should run in parallel to IAM.
 
 ### Notes
 
-\* Module 2 and 3 could be combined together if you have enough clean data (i.e. a multispeaker version of LJSpeech); the only change is to bias-add global condition in addition to asr features. I tried with British subset of VCTK data and it worked reasonably well, but didn't have good results on other accent subsets from VCTK.
+It took 0.66s / 1.24s to convert 1s / 5s of audio on my macbook pro (late 2013, 2.4Ghz dual core i5, 4gb ram). 
 
-For Module 2 (IAM), instead of constructing full resolution audio, you could also construct mel spectrogram, which will then be fed to the VC model. Note that you will not be able to use multi-stft loss with this approach. 
+The AM is the performance and speed bottleneck of this foreign accent conversion pipeline. It is crucial to train with mixed data with source and target accents.
 
-The AM (ASR) is the performance bottleneck of this foreign accent conversion pipeline. Make sure you train with data from your source domain in addition to utterances with common accents. 
+\* IAM and VC could be combined together with enough clean data (i.e. a multispeaker version of LJSpeech); the only change is to bias-add global condition in addition to asr features. I had acceptable results on British subset of VCTK but not on other accent subsets.
 
-ASR is a heavy task; it is better to be put on cloud.
+The IAM could also generate mel spectrogram instead of full resolution audio. Since mel spectrogram runs on low resolution and we're only 4x away from target resolution, even autoregressive approaches are in real time. I tried with wavernn, the results were noisier than the full-resolution iam. 
 
-Regarding voice cloning, the AM + IAM is itself a VC model that also learns about target speaker's pronunciation pattern.
+For VC, I had better results training on raw audio than the preemphasis - output - deemphasis pipeline from LPCnet.
 
 ### References
 
@@ -199,7 +210,7 @@ Regarding voice cloning, the AM + IAM is itself a VC model that also learns abou
 - [TensorFlowTTS](https://github.com/TensorSpeech/TensorFlowTTS)
 - [VQVAE 1](https://github.com/deepmind/sonnet/blob/master/sonnet/python/modules/nets/vqvae.py)
 - [VQVAE 2](https://github.com/deepmind/sonnet/blob/master/sonnet/examples/vqvae_example.ipynb)
-- [VQVAE encoder](https://github.com/bshall/ZeroSpeech)
+- [WaveRNN](https://github.com/bshall/ZeroSpeech)
 
 ### License
 
