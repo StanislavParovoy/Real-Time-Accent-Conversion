@@ -214,4 +214,4 @@ For VC, I had better results training on raw audio than the preemphasis - output
 
 ### License
 
-[Apache 2.0](http://www.apache.org/licenses/LICENSE-2.0) or abiding to all licenses used by resources used in this repository
+GNU General Public License v2.0
