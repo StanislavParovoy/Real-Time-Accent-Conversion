@@ -15,7 +15,7 @@ This pipeline didn't yield high robustness I was expecting (heavy accents poorly
 ## **Architecture** 
 My pipeline is as follows:
 
-![model architecture](model_architecture.png?raw=true "architecture")
+![model architecture](model_architecture.jpg?raw=true "architecture")
 
 ### Module 1: Accent-Invariant Feature from Acoustic Model (AM)
 
